@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<meta name="referrer" content="no-referrer">
+<title>Retour vers Studio Publication</title>
+<link rel="icon" type="image/png" href="../icone.png">
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px;
+    font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f4f8; color: #16141c; }
+  .carte { max-width: 460px; background: #fff; border: 1px solid #e3e1ea; border-radius: 18px; padding: 28px; text-align: center; }
+  h1 { font-size: 20px; margin: 0 0 8px; }
+  p { margin: 8px 0 0; color: #6b6877; }
+  a { display: inline-block; margin-top: 16px; padding: 10px 18px; border-radius: 10px; background: #dd2a6b; color: #fff; text-decoration: none; font-weight: 600; }
+  @media (prefers-color-scheme: dark) {
+    body { background: #0d0c11; color: #f2f1f6; }
+    .carte { background: #17161d; border-color: #2a2835; }
+    p { color: #a09dad; }
+  }
+</style>
+</head>
+<body>
+<div class="carte">
+  <h1 id="titre">Retour vers Studio Publication…</h1>
+  <p id="msg">La connexion est presque terminée : cette page te ramène dans le studio, sur ton ordinateur.</p>
+  <a id="lien" href="#" hidden>Continuer vers le studio</a>
+  <noscript><p>Active JavaScript pour terminer la connexion.</p></noscript>
+</div>
+<script>
+  // Page de retour après une connexion Instagram ou Threads (Studio Publication).
+  // Le studio tourne sur l'ordinateur de l'entreprise : on y renvoie le code de connexion donné par Meta.
+  // Rien n'est enregistré ni envoyé ailleurs.
+  (function () {
+    var suite = location.search;
+    if (suite.length > 1 && /[?&](code|error|state)=/.test(suite)) {
+      var cible = "http://127.0.0.1:8766/retour" + suite;
+      var lien = document.getElementById("lien");
+      lien.href = cible;
+      lien.hidden = false;
+      location.replace(cible);
+    } else {
+      document.getElementById("titre").textContent = "Studio Publication";
+      document.getElementById("msg").textContent = "Cette page sert uniquement à revenir dans l'application après la connexion d'un compte Instagram ou Threads.";
+    }
+  })();
+</script>
+</body>
+</html>
