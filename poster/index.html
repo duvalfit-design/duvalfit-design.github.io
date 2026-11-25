@@ -33,10 +33,16 @@ h2{font:600 15px/1 inherit;color:var(--doux);text-transform:uppercase;letter-spa
 .vide{text-align:center;color:var(--doux);padding:40px 10px}
 .note{position:fixed;left:16px;right:16px;bottom:calc(16px + env(safe-area-inset-bottom));background:#fff;color:#111;border-radius:12px;padding:12px 14px;font-size:14px;text-align:center;opacity:0;pointer-events:none;transition:opacity .25s}
 .note.vu{opacity:1}
+.modes{display:flex;gap:8px;margin:0 0 14px}.modes button{flex:1;border:1px solid var(--ligne);background:transparent;color:var(--doux);border-radius:12px;padding:11px 6px;font:600 14px/1.1 inherit}
+.modes button.on{border-color:var(--or);color:var(--or)}
+.puces{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px}.puces button{border:1px solid var(--ligne);background:transparent;color:var(--txt);border-radius:99px;padding:8px 12px;font:600 14px/1 inherit}
+.puces button.on{background:var(--or);border-color:var(--or);color:#1b1503}.aide{font-size:13px;color:var(--doux);margin:0 0 12px}
 </style></head><body>
 <h1>Posts à la main</h1><p class="sous" id="sous">Chargement…</p>
 <div class="etat" id="etat"><i></i><span id="etatTxt">Recherche du studio…</span></div>
 <div class="barre"><i id="barre"></i></div>
+<div class="modes"><button data-mode="heure">Poster maintenant</button><button data-mode="brouillons">Séance brouillons</button></div>
+<div id="seance"></div>
 <div id="suivant"></div><h2 id="tAvenir" hidden>Ensuite</h2><div id="avenir"></div><h2 id="tFaits" hidden>Déjà traités</h2><div id="faits"></div>
 <div class="note" id="note"></div>
 <script>
@@ -57,6 +63,7 @@ let posts = lire('posts', []);          // la liste, gardée dans le téléphone
 let attente = lire('attente', []);      // appuis faits Mac éteint, à remonter au studio : [{id, statut, t}]
 let base = lire('base', '');            // adresse internet du studio la dernière fois qu'il a répondu
 let enLigne = false, ouvert = null, enCours = false;
+let mode = lire('mode', 'heure'), compteSeance = null;   // « brouillons » : on prépare d'affilée tous les posts d'un compte
 const fichiers = {};                    // id -> File en mémoire, prêt pour le partage
 const dansTel = new Set();              // ids des vidéos déjà rangées dans le téléphone
 const cleVideo = (id) => 'v/' + id + '.mp4';
@@ -95,7 +102,7 @@ async function synchroniser() {
       const envoye = attente.length !== reste.length;
       attente = reste; ecrire('attente', attente);
       if (envoye) { try { d = await (await essayer(base + '/t/' + secret + '/liste')).json(); } catch { /* on garde la liste d'avant */ } }
-      posts = d.posts.map((p) => { const a = attente.find((x) => x.id === p.id); return a ? Object.assign(p, {statut: a.statut}) : p; });
+      posts = d.posts.map((p) => { const a = attente.find((x) => x.id === p.id); return !a ? p : (a.statut === 'brouillon' || a.statut === 'pasbrouillon' ? Object.assign(p, {brouillon: a.statut === 'brouillon'}) : Object.assign(p, {statut: a.statut})); });
       ecrire('posts', posts);
     }
     dessiner();
@@ -143,9 +150,10 @@ async function preparer(p) {
   if (!p) return;
   const f = await fichier(p);
   if ($('#suivant').dataset.id !== p.id) return;
+  const secondaire = !!document.querySelector('[data-envoyer="' + p.id + '"].fin');
   const bt = document.querySelector('[data-envoyer="' + p.id + '"]'), v = document.querySelector('#suivant video');
   if (f) {
-    if (bt) { bt.disabled = false; bt.textContent = 'Envoyer vers Instagram'; }
+    if (bt) { bt.disabled = false; bt.textContent = secondaire ? 'Renvoyer la vidéo vers Instagram' : 'Envoyer vers Instagram'; }
     if (v && !v.src) v.src = URL.createObjectURL(f);
   } else if (bt) bt.textContent = enLigne ? 'Chargement de la vidéo…' : 'Vidéo pas encore dans le téléphone';
 }
@@ -164,9 +172,21 @@ function dessiner() {
   $('#etatTxt').textContent = (enCours && !enLigne ? 'Recherche du studio… ' : (enLigne ? 'Studio joint. ' : 'Mac éteint : tu peux poster quand même. '))
     + (aFaire.length ? prets + ' vidéo' + (prets > 1 ? 's' : '') + ' sur ' + aFaire.length + ' dans le téléphone' + (charge ? ', chargement…' : '') + '.' : '')
     + (attente.length ? ' ' + attente.length + ' à remonter au studio.' : '');
-  const p = aFaire.find((x) => x.id === ouvert) || aFaire.find((x) => dansTel.has(x.id)) || aFaire[0];
-  if (!p) { $('#suivant').dataset.id = ''; $('#suivant').innerHTML = '<div class="vide">' + (posts.length ? 'Tout est posté pour l\'instant. Bravo.' : 'Aucun post préparé. Prépare-les depuis le studio, sur le Mac.') + '</div>'; }
-  else if ($('#suivant').dataset.id !== p.id) {
+  document.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('on', b.dataset.mode === mode));
+  const seance = mode === 'brouillons';
+  const aPreparer = aFaire.filter((x) => !x.brouillon);
+  const comptes = [...new Set(aPreparer.map((x) => x.compte))];
+  if (seance && !comptes.includes(compteSeance)) compteSeance = comptes[0] || null;
+  $('#seance').innerHTML = !seance ? '' : (comptes.length
+    ? '<p class="aide">Choisis un compte, mets-toi dessus dans Instagram, puis enregistre toutes ses vidéos en brouillon d\'affilée. À l\'heure du rappel, il ne restera qu\'à publier le brouillon.</p><div class="puces">' + comptes.map((c) => '<button data-compte="' + esc(c) + '" class="' + (c === compteSeance ? 'on' : '') + '">' + esc(c) + ' · ' + aPreparer.filter((x) => x.compte === c).length + '</button>').join('') + '</div>'
+    : '<p class="aide">Tous les posts à venir sont déjà en brouillon. Passe sur « Poster maintenant » pour les publier à l\'heure.</p>');
+  const p = seance ? aPreparer.find((x) => x.compte === compteSeance)
+    : (aFaire.find((x) => x.id === ouvert) || aFaire.find((x) => x.brouillon || dansTel.has(x.id)) || aFaire[0]);
+  const cleCarte = p ? p.id + ':' + mode + ':' + (p.brouillon ? 1 : 0) : '';
+  if (!p && seance) { $('#suivant').dataset.id = ''; $('#suivant').innerHTML = ''; }
+  else if (!p) { $('#suivant').dataset.id = ''; $('#suivant').innerHTML = '<div class="vide">' + (posts.length ? 'Tout est posté pour l\'instant. Bravo.' : 'Aucun post préparé. Prépare-les depuis le studio, sur le Mac.') + '</div>'; }
+  else if ($('#suivant').dataset.cle !== cleCarte) {
+    $('#suivant').dataset.cle = cleCarte;
     $('#suivant').dataset.id = p.id;
     const retard = now - p.heure;
     $('#suivant').innerHTML = '<div class="carte suivant"><div class="tete"><span class="heure">' + hm(p.heure) + '</span>'
@@ -176,16 +196,22 @@ function dessiner() {
       + (p.genre === 'essai' ? '<p class="consigne">Dans Instagram, active « Essai » avant de partager.</p>' : '')
       + '<video controls playsinline preload="metadata"></video>'
       + (p.legende ? '<p class="leg">' + esc(p.legende) + '</p>' : '')
-      + '<button class="btn or" data-envoyer="' + p.id + '" disabled>Chargement de la vidéo…</button>'
-      + '<ol class="etapes"><li>Dans Instagram, mets-toi sur <b>' + esc(p.compte) + '</b> (appui long sur ta photo de profil, en bas à droite).</li><li>Reviens ici, appuie sur « Envoyer vers Instagram », puis choisis Instagram › Reel.</li>'
-      + (p.legende ? '<li>La légende est déjà copiée : colle-la.</li>' : '') + '</ol>'
-      + '<div class="duo"><button class="btn ok" data-fait="' + p.id + '">C\'est posté ✓</button><button class="btn fin" data-saute="' + p.id + '">Passer</button></div></div>';
+      + (p.brouillon && !seance
+        ? '<p class="consigne">Déjà en brouillon. Dans Instagram, sur <b>' + esc(p.compte) + '</b> : « + » › Reel › Brouillons, choisis cette vidéo et publie.</p>'
+          + '<div class="duo"><button class="btn ok" data-fait="' + p.id + '">C\'est posté ✓</button><button class="btn fin" data-saute="' + p.id + '">Passer</button></div>'
+          + '<button class="btn fin" data-envoyer="' + p.id + '" disabled>Chargement de la vidéo…</button><button class="btn fin" data-pasbrouillon="' + p.id + '">Ce n\'était pas en brouillon</button></div>'
+        : '<button class="btn or" data-envoyer="' + p.id + '" disabled>Chargement de la vidéo…</button>'
+          + '<ol class="etapes"><li>Dans Instagram, mets-toi sur <b>' + esc(p.compte) + '</b> (appui long sur ta photo de profil, en bas à droite).</li><li>Reviens ici, appuie sur « Envoyer vers Instagram », puis choisis Instagram › Reel.</li>'
+          + (p.legende ? '<li>La légende est déjà copiée : colle-la.</li>' : '')
+          + (seance ? '<li>Dans Instagram, choisis <b>« Enregistrer le brouillon »</b> au lieu de partager.</li>' : '') + '</ol>'
+          + (seance ? '<div class="duo"><button class="btn ok" data-brouillon="' + p.id + '">Mis en brouillon ✓</button><button class="btn fin" data-saute="' + p.id + '">Passer</button></div></div>'
+                    : '<div class="duo"><button class="btn ok" data-fait="' + p.id + '">C\'est posté ✓</button><button class="btn fin" data-saute="' + p.id + '">Passer</button></div></div>'));
   }
   if (p) preparer(p);
   const reste = aFaire.filter((x) => !p || x.id !== p.id);
   if (reste[0] && dansTel.has(reste[0].id)) fichier(reste[0]);
   $('#tAvenir').hidden = !reste.length;
-  $('#avenir').innerHTML = reste.map((x) => '<div class="ligne"><span class="h">' + hm(x.heure) + '</span><span class="c">' + esc(x.compte) + '</span><span class="s' + (dansTel.has(x.id) ? '' : ' manque') + '">' + (x.genre === 'essai' ? 'essai' : 'réel') + (dansTel.has(x.id) ? '' : ' · pas chargée') + '</span><button data-ouvrir="' + x.id + '">Faire maintenant</button></div>').join('');
+  $('#avenir').innerHTML = reste.map((x) => '<div class="ligne"><span class="h">' + hm(x.heure) + '</span><span class="c">' + esc(x.compte) + '</span><span class="s' + (dansTel.has(x.id) ? '' : ' manque') + '">' + (x.genre === 'essai' ? 'essai' : 'réel') + (x.brouillon ? ' · en brouillon' : (dansTel.has(x.id) ? '' : ' · pas chargée')) + '</span><button data-ouvrir="' + x.id + '">Faire maintenant</button></div>').join('');
   $('#tFaits').hidden = !traites.length;
   $('#faits').innerHTML = traites.map((x) => '<div class="ligne ' + x.statut + '"><span class="h">' + hm(x.heure) + '</span><span class="c">' + esc(x.compte) + '</span><span class="s">' + (x.statut === 'fait' ? 'posté ✓' : 'passé') + '</span><button data-prevu="' + x.id + '">Annuler</button></div>').join('');
 }
@@ -193,16 +219,21 @@ function dessiner() {
 function marquer(id, statut) {
   const p = posts.find((x) => x.id === id);
   if (!p) return;
-  p.statut = statut; ecrire('posts', posts);
+  if (statut === 'brouillon' || statut === 'pasbrouillon') p.brouillon = statut === 'brouillon'; else p.statut = statut;
+  ecrire('posts', posts);
   attente = attente.filter((a) => a.id !== id).concat([{id, statut, t: Date.now() / 1000}]); ecrire('attente', attente);
-  ouvert = null; $('#suivant').dataset.id = '';
+  ouvert = null; $('#suivant').dataset.id = ''; $('#suivant').dataset.cle = '';
   dessiner(); synchroniser();
 }
 
 document.addEventListener('click', async (e) => {
-  const t = e.target.closest('[data-envoyer],[data-fait],[data-saute],[data-prevu],[data-ouvrir]');
+  const t = e.target.closest('[data-envoyer],[data-fait],[data-saute],[data-prevu],[data-ouvrir],[data-mode],[data-compte],[data-brouillon],[data-pasbrouillon]');
   if (!t) return;
   const d = t.dataset;
+  if (d.mode) { mode = d.mode; ecrire('mode', mode); ouvert = null; dessiner(); return; }
+  if (d.compte) { compteSeance = d.compte; dessiner(); return; }
+  if (d.brouillon) { marquer(d.brouillon, 'brouillon'); note('Noté. Vidéo suivante de ce compte.'); return; }
+  if (d.pasbrouillon) { marquer(d.pasbrouillon, 'pasbrouillon'); return; }
   if (d.envoyer) {
     const p = posts.find((x) => x.id === d.envoyer), f = fichiers[d.envoyer];
     if (p && p.legende && navigator.clipboard) navigator.clipboard.writeText(p.legende).catch(() => {});
@@ -214,7 +245,7 @@ document.addEventListener('click', async (e) => {
   } else if (d.fait) marquer(d.fait, 'fait');
   else if (d.saute) { if (confirm('Passer ce post ? Sa vidéo retourne au stock.')) marquer(d.saute, 'saute'); }
   else if (d.prevu) marquer(d.prevu, 'prevu');
-  else if (d.ouvrir) { ouvert = d.ouvrir; $('#suivant').dataset.id = ''; dessiner(); window.scrollTo({top: 0, behavior: 'smooth'}); }
+  else if (d.ouvrir) { ouvert = d.ouvrir; mode = 'heure'; ecrire('mode', mode); $('#suivant').dataset.id = ''; dessiner(); window.scrollTo({top: 0, behavior: 'smooth'}); }
 });
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
