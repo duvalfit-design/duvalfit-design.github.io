@@ -1,0 +1,224 @@
+<!doctype html><html lang="fr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow"><meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#0d0c0a">
+<title>Posts à la main</title>
+<style>
+:root{--bg:#0d0c0a;--carte:#17150f;--ligne:#2c281d;--txt:#f1ece0;--doux:#a79f8c;--or:#ecc25c;--ok:#5fcf8f;--essai:#ff8a5c}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--txt);font:16px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+padding:16px 16px calc(28px + env(safe-area-inset-bottom))}
+h1{font:600 22px/1.2 Georgia,serif;margin:6px 0 2px}.sous{color:var(--doux);font-size:14px;margin:0 0 10px}
+.etat{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--doux);margin:0 0 12px}
+.etat i{width:9px;height:9px;border-radius:50%;background:var(--doux);flex:none}.etat.on i{background:var(--ok)}.etat.charge i{background:var(--or)}
+.barre{height:6px;border-radius:6px;background:var(--ligne);overflow:hidden;margin:0 0 18px}.barre i{display:block;height:100%;background:var(--or);width:0;transition:width .4s}
+.carte{background:var(--carte);border:1px solid var(--ligne);border-radius:18px;padding:16px;margin:0 0 14px}
+.carte.suivant{border-color:var(--or);box-shadow:0 0 0 1px var(--or),0 10px 40px rgba(236,194,92,.12)}
+.tete{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}.heure{font:600 26px/1 Georgia,serif;color:var(--or)}
+.retard{color:var(--essai);font-size:13px}.compte{font-size:22px;font-weight:700;margin:8px 0 6px;word-break:break-all}
+.type{display:inline-block;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:5px 10px;border-radius:99px;border:1px solid var(--ligne);color:var(--doux)}
+.type.essai{color:#1a0d06;background:var(--essai);border-color:var(--essai)}
+.consigne{font-size:14px;color:var(--essai);margin:8px 0 0}
+video{width:100%;max-height:46vh;border-radius:12px;background:#000;margin:12px 0 0}
+.leg{font-size:14px;color:var(--doux);margin:10px 0 0;white-space:pre-wrap;word-break:break-word;max-height:5.8em;overflow:auto}
+.btn{display:block;width:100%;border:0;border-radius:14px;padding:16px;font:600 17px/1 inherit;margin:12px 0 0;cursor:pointer;text-align:center;text-decoration:none}
+.btn.or{background:var(--or);color:#1b1503}.btn.or:disabled{opacity:.55}
+.btn.ok{background:transparent;color:var(--ok);border:1px solid var(--ok)}
+.duo{display:flex;gap:10px}.duo .btn{flex:1}.btn.fin{background:transparent;color:var(--doux);border:1px solid var(--ligne);font-size:15px;padding:13px}
+.etapes{font-size:13px;color:var(--doux);margin:10px 0 0;padding-left:18px}.etapes li{margin:2px 0}
+.ligne{display:flex;align-items:center;gap:10px;padding:11px 2px;border-bottom:1px solid var(--ligne);font-size:15px}
+.ligne .h{color:var(--or);font-variant-numeric:tabular-nums;min-width:48px}.ligne .c{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ligne .s{font-size:13px;color:var(--doux)}.ligne.fait .s{color:var(--ok)}.ligne button{background:none;border:0;color:var(--doux);font-size:13px;text-decoration:underline;padding:4px}
+.ligne .manque{color:var(--essai)}
+h2{font:600 15px/1 inherit;color:var(--doux);text-transform:uppercase;letter-spacing:.08em;margin:22px 0 4px}
+.vide{text-align:center;color:var(--doux);padding:40px 10px}
+.note{position:fixed;left:16px;right:16px;bottom:calc(16px + env(safe-area-inset-bottom));background:#fff;color:#111;border-radius:12px;padding:12px 14px;font-size:14px;text-align:center;opacity:0;pointer-events:none;transition:opacity .25s}
+.note.vu{opacity:1}
+</style></head><body>
+<h1>Posts à la main</h1><p class="sous" id="sous">Chargement…</p>
+<div class="etat" id="etat"><i></i><span id="etatTxt">Recherche du studio…</span></div>
+<div class="barre"><i id="barre"></i></div>
+<div id="suivant"></div><h2 id="tAvenir" hidden>Ensuite</h2><div id="avenir"></div><h2 id="tFaits" hidden>Déjà traités</h2><div id="faits"></div>
+<div class="note" id="note"></div>
+<script>
+// Cette page ne contient aucune donnée. La clé (après le # du lien donné par le studio) reste dans ce téléphone.
+// Les vidéos sont rangées dans le téléphone : une fois chargées, la page marche sans le Mac.
+const NTFY = 'https://ntfy.sh';
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const hm = (t) => new Date(t * 1000).toLocaleTimeString('fr-FR', {hour: '2-digit', minute: '2-digit'});
+const lire = (k, d) => { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } };
+const ecrire = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* stockage plein ou bloqué */ } };
+function note(t) { const n = $('#note'); n.textContent = t; n.classList.add('vu'); clearTimeout(note.t); note.t = setTimeout(() => n.classList.remove('vu'), 3400); }
+
+if (location.hash.length > 10) { ecrire('cle', location.hash.slice(1)); history.replaceState(null, '', location.pathname); }
+const cle = lire('cle', '');
+const [secret, sujetAdr] = cle.split('.');
+let posts = lire('posts', []);          // la liste, gardée dans le téléphone
+let attente = lire('attente', []);      // appuis faits Mac éteint, à remonter au studio : [{id, statut, t}]
+let base = lire('base', '');            // adresse internet du studio la dernière fois qu'il a répondu
+let enLigne = false, ouvert = null, enCours = false;
+const fichiers = {};                    // id -> File en mémoire, prêt pour le partage
+const dansTel = new Set();              // ids des vidéos déjà rangées dans le téléphone
+const cleVideo = (id) => 'v/' + id + '.mp4';
+
+async function essayer(url, opt, ms) {
+  const c = new AbortController(); const t = setTimeout(() => c.abort(), ms || 7000);
+  try { return await fetch(url, Object.assign({signal: c.signal, cache: 'no-store'}, opt || {})); } finally { clearTimeout(t); }
+}
+
+async function adressesConnues() {
+  const l = base ? [base] : [];
+  if (!sujetAdr) return l;
+  try {
+    const txt = await (await essayer(NTFY + '/' + sujetAdr + '/json?poll=1&since=12h', null, 7000)).text();
+    const msgs = txt.split('\n').filter(Boolean).map((x) => { try { return JSON.parse(x); } catch { return null; } }).filter((m) => m && m.event === 'message' && /^https:\/\//.test(m.message || ''));
+    msgs.sort((a, b) => b.time - a.time);
+    for (const m of msgs) if (!l.includes(m.message)) l.push(m.message);
+  } catch { /* pas de réseau */ }
+  return l;
+}
+
+async function synchroniser() {
+  if (!secret || enCours) return;
+  enCours = true;
+  try {
+    let d = null;
+    for (const b of await adressesConnues()) {
+      try { const r = await essayer(b + '/t/' + secret + '/liste'); if (r.ok) { d = await r.json(); base = b; ecrire('base', b); break; } } catch { /* studio éteint à cette adresse */ }
+    }
+    enLigne = !!d;
+    if (d) {
+      const reste = [];
+      for (const a of attente) {          // remonte ce qui a été fait Mac éteint
+        try { const r = await essayer(base + '/t/' + secret + '/' + a.statut + '/' + a.id + '?t=' + Math.round(a.t), {method: 'POST'}); if (!r.ok) reste.push(a); } catch { reste.push(a); }
+      }
+      const envoye = attente.length !== reste.length;
+      attente = reste; ecrire('attente', attente);
+      if (envoye) { try { d = await (await essayer(base + '/t/' + secret + '/liste')).json(); } catch { /* on garde la liste d'avant */ } }
+      posts = d.posts.map((p) => { const a = attente.find((x) => x.id === p.id); return a ? Object.assign(p, {statut: a.statut}) : p; });
+      ecrire('posts', posts);
+    }
+    dessiner();
+    if (enLigne) await rangerVideos();
+  } finally { enCours = false; dessiner(); }
+}
+
+async function rangerVideos() {
+  if (!('caches' in window)) return;
+  if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+  const cache = await caches.open('videos');
+  const voulus = posts.filter((p) => p.statut === 'prevu');
+  for (const r of await cache.keys()) {          // ménage : les vidéos des posts déjà traités ou retirés
+    const id = (r.url.match(/v\/([^/]+)\.mp4$/) || [])[1];
+    if (!voulus.some((p) => p.id === id)) { await cache.delete(r); dansTel.delete(id); }
+  }
+  for (const p of voulus) {
+    if (await cache.match(cleVideo(p.id))) { dansTel.add(p.id); continue; }
+    try {
+      const r = await fetch(base + '/t/' + secret + '/v/' + p.id + '.mp4', {cache: 'no-store'});
+      if (!r.ok) continue;
+      await cache.put(cleVideo(p.id), new Response(await r.blob(), {headers: {'Content-Type': 'video/mp4'}}));
+      dansTel.add(p.id);
+    } catch { break; }                           // plus de réseau ou plus de place : on s'arrête là
+    dessiner();
+  }
+}
+
+async function recenser() {
+  if (!('caches' in window)) return;
+  const cache = await caches.open('videos');
+  for (const r of await cache.keys()) { const id = (r.url.match(/v\/([^/]+)\.mp4$/) || [])[1]; if (id) dansTel.add(id); }
+}
+
+async function fichier(p) {
+  if (fichiers[p.id]) return fichiers[p.id];
+  if (!('caches' in window)) return null;
+  const r = await (await caches.open('videos')).match(cleVideo(p.id));
+  if (!r) return null;
+  fichiers[p.id] = new File([await r.blob()], 'reel-' + p.id + '.mp4', {type: 'video/mp4'});
+  return fichiers[p.id];
+}
+
+async function preparer(p) {
+  if (!p) return;
+  const f = await fichier(p);
+  if ($('#suivant').dataset.id !== p.id) return;
+  const bt = document.querySelector('[data-envoyer="' + p.id + '"]'), v = document.querySelector('#suivant video');
+  if (f) {
+    if (bt) { bt.disabled = false; bt.textContent = 'Envoyer vers Instagram'; }
+    if (v && !v.src) v.src = URL.createObjectURL(f);
+  } else if (bt) bt.textContent = enLigne ? 'Chargement de la vidéo…' : 'Vidéo pas encore dans le téléphone';
+}
+
+function dessiner() {
+  if (!secret) { $('#sous').textContent = ''; $('#etatTxt').textContent = ''; $('#suivant').innerHTML = '<div class="vide">Ouvre cette page avec le lien donné par le studio (menu « Poster à la main », sur le Mac).</div>'; return; }
+  const now = Date.now() / 1000;
+  const aFaire = posts.filter((p) => p.statut === 'prevu');
+  const traites = posts.filter((p) => p.statut !== 'prevu');
+  const faits = traites.filter((p) => p.statut === 'fait').length;
+  const prets = aFaire.filter((p) => dansTel.has(p.id)).length;
+  $('#sous').textContent = posts.length ? faits + ' posté' + (faits > 1 ? 's' : '') + ' sur ' + posts.length + ' · ' + aFaire.length + ' à faire' : 'Rien de prévu.';
+  $('#barre').style.width = posts.length ? Math.round(100 * faits / posts.length) + '%' : '0';
+  const charge = enLigne && prets < aFaire.length;
+  $('#etat').className = 'etat' + (charge ? ' charge' : (enLigne ? ' on' : ''));
+  $('#etatTxt').textContent = (enCours && !enLigne ? 'Recherche du studio… ' : (enLigne ? 'Studio joint. ' : 'Mac éteint : tu peux poster quand même. '))
+    + (aFaire.length ? prets + ' vidéo' + (prets > 1 ? 's' : '') + ' sur ' + aFaire.length + ' dans le téléphone' + (charge ? ', chargement…' : '') + '.' : '')
+    + (attente.length ? ' ' + attente.length + ' à remonter au studio.' : '');
+  const p = aFaire.find((x) => x.id === ouvert) || aFaire.find((x) => dansTel.has(x.id)) || aFaire[0];
+  if (!p) { $('#suivant').dataset.id = ''; $('#suivant').innerHTML = '<div class="vide">' + (posts.length ? 'Tout est posté pour l\'instant. Bravo.' : 'Aucun post préparé. Prépare-les depuis le studio, sur le Mac.') + '</div>'; }
+  else if ($('#suivant').dataset.id !== p.id) {
+    $('#suivant').dataset.id = p.id;
+    const retard = now - p.heure;
+    $('#suivant').innerHTML = '<div class="carte suivant"><div class="tete"><span class="heure">' + hm(p.heure) + '</span>'
+      + (retard > 300 ? '<span class="retard">prévu il y a ' + Math.round(retard / 60) + ' min</span>' : (retard < -60 ? '<span class="sous" style="margin:0">dans ' + Math.round(-retard / 60) + ' min</span>' : '<span class="retard">c\'est maintenant</span>')) + '</div>'
+      + '<div class="compte">' + esc(p.compte) + '</div>'
+      + '<span class="type ' + (p.genre === 'essai' ? 'essai' : '') + '">' + (p.genre === 'essai' ? 'Réel d\'essai' : 'Réel normal') + '</span>'
+      + (p.genre === 'essai' ? '<p class="consigne">Dans Instagram, active « Essai » avant de partager.</p>' : '')
+      + '<video controls playsinline preload="metadata"></video>'
+      + (p.legende ? '<p class="leg">' + esc(p.legende) + '</p>' : '')
+      + '<button class="btn or" data-envoyer="' + p.id + '" disabled>Chargement de la vidéo…</button>'
+      + '<ol class="etapes"><li>Dans Instagram, mets-toi sur <b>' + esc(p.compte) + '</b> (appui long sur ta photo de profil, en bas à droite).</li><li>Reviens ici, appuie sur « Envoyer vers Instagram », puis choisis Instagram › Reel.</li>'
+      + (p.legende ? '<li>La légende est déjà copiée : colle-la.</li>' : '') + '</ol>'
+      + '<div class="duo"><button class="btn ok" data-fait="' + p.id + '">C\'est posté ✓</button><button class="btn fin" data-saute="' + p.id + '">Passer</button></div></div>';
+  }
+  if (p) preparer(p);
+  const reste = aFaire.filter((x) => !p || x.id !== p.id);
+  if (reste[0] && dansTel.has(reste[0].id)) fichier(reste[0]);
+  $('#tAvenir').hidden = !reste.length;
+  $('#avenir').innerHTML = reste.map((x) => '<div class="ligne"><span class="h">' + hm(x.heure) + '</span><span class="c">' + esc(x.compte) + '</span><span class="s' + (dansTel.has(x.id) ? '' : ' manque') + '">' + (x.genre === 'essai' ? 'essai' : 'réel') + (dansTel.has(x.id) ? '' : ' · pas chargée') + '</span><button data-ouvrir="' + x.id + '">Faire maintenant</button></div>').join('');
+  $('#tFaits').hidden = !traites.length;
+  $('#faits').innerHTML = traites.map((x) => '<div class="ligne ' + x.statut + '"><span class="h">' + hm(x.heure) + '</span><span class="c">' + esc(x.compte) + '</span><span class="s">' + (x.statut === 'fait' ? 'posté ✓' : 'passé') + '</span><button data-prevu="' + x.id + '">Annuler</button></div>').join('');
+}
+
+function marquer(id, statut) {
+  const p = posts.find((x) => x.id === id);
+  if (!p) return;
+  p.statut = statut; ecrire('posts', posts);
+  attente = attente.filter((a) => a.id !== id).concat([{id, statut, t: Date.now() / 1000}]); ecrire('attente', attente);
+  ouvert = null; $('#suivant').dataset.id = '';
+  dessiner(); synchroniser();
+}
+
+document.addEventListener('click', async (e) => {
+  const t = e.target.closest('[data-envoyer],[data-fait],[data-saute],[data-prevu],[data-ouvrir]');
+  if (!t) return;
+  const d = t.dataset;
+  if (d.envoyer) {
+    const p = posts.find((x) => x.id === d.envoyer), f = fichiers[d.envoyer];
+    if (p && p.legende && navigator.clipboard) navigator.clipboard.writeText(p.legende).catch(() => {});
+    if (!f) { note('La vidéo charge encore, réessaie dans un instant.'); return; }
+    if (navigator.canShare && navigator.canShare({files: [f]})) {
+      try { await navigator.share({files: [f]}); note(p && p.legende ? 'Légende copiée. Une fois posté, appuie sur « C\'est posté ».' : 'Une fois posté, appuie sur « C\'est posté ».'); }
+      catch (err) { if (err && err.name !== 'AbortError') note('Le partage n\'a pas marché sur ce téléphone.'); }
+    } else note('Ce navigateur ne sait pas partager une vidéo : ouvre la page dans Safari.');
+  } else if (d.fait) marquer(d.fait, 'fait');
+  else if (d.saute) { if (confirm('Passer ce post ? Sa vidéo retourne au stock.')) marquer(d.saute, 'saute'); }
+  else if (d.prevu) marquer(d.prevu, 'prevu');
+  else if (d.ouvrir) { ouvert = d.ouvrir; $('#suivant').dataset.id = ''; dessiner(); window.scrollTo({top: 0, behavior: 'smooth'}); }
+});
+
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+recenser().then(() => { dessiner(); synchroniser(); });
+setInterval(synchroniser, 45000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) synchroniser(); });
+</script></body></html>
